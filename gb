@@ -1,0 +1,101 @@
+#!/bin/bash
+
+REVERSE=''
+FIELDS_LIST=1
+PARTN='' # 为空代表不做限制
+START_LINE=1
+UNIQ=''
+showGraph=0
+FS=''
+
+usage()
+{
+cat <<-EOF
+Usage: gb [OPTION]... [FILE]...
+GROUP BY fields of lines from each FILE to standard output
+
+  -f LIST: output only these fields. Default as 1. Output all fields use: -f 0. More than one field use: -f 1,2,...,N
+  -H    N: output first N lines.
+  -t    N: output last N lines.
+  -F   fs: field separator, same as 'awk'
+  -k    N: skip first N lines
+  -r     : reverse the result of comparisons
+  -g     : show graph
+  -s     : show graph and no iconv
+  -u     : only print unique fields
+  -h     : display this help and exit
+  -v     : output version information and exit
+
+With no FILE, or when FILE is -, read standard input.
+
+Example:
+$ gb -f2 file
+equivalent to
+$ awk '{print \$2}' file | sort | uniq -c | sort -nk1
+, and much faster than the latter command.
+
+Report bugs to <wei.zhao@chinacache.com>.
+EOF
+}
+
+version()
+{
+cat <<EOF
+gb (COP utils) 0.10
+EOF
+}
+
+while getopts ":rf:F:H:t:k:huv" arg
+do
+    case $arg in
+        r ) REVERSE='r'
+              ;;
+        f ) FIELDS_LIST=$OPTARG
+              ;;
+        k ) START_LINE=$((OPTARG+1))
+              ;;
+        u ) UNIQ='u'
+              ;;
+        H ) PARTN="| head -$OPTARG"
+              ;;
+        t ) PARTN="| tail -$OPTARG"
+              ;;
+        F ) FS=-F"$OPTARG"
+              ;;
+		h ) usage
+			exit 0;;
+		v ) version
+			exit 0;;
+		\? ) usage
+			exit 1;;
+    esac
+done
+
+shift $(($OPTIND-1))
+
+FIELDS=`echo $FIELDS_LIST | sed 's/,/ /g'`
+FIELDS_FMT=''
+VAR_STR=''
+for var in $FIELDS
+do
+    if [[ $var =~ "[^0-9]" ]]
+    then
+        echo Invalid fields list: $FIELDS_LIST
+        exit 1
+    fi
+    FIELDS_FMT=$FIELDS_FMT"%-25s "
+    VAR_STR=$VAR_STR",$"$var
+done
+FIELDS_FMT=\"$FIELDS_FMT"\n\""$VAR_STR
+
+file=$@
+
+selectFiled='awk $FS "NR>=$START_LINE{printf $FIELDS_FMT}"'
+sorted="| awk '{ a[\$0]++ } END { for (i in a) printf(\"%7d %s\\n\", a[i], i);}'"
+sorted=$sorted' |sort -"$REVERSE"nk1'
+
+if [ "$UNIQ" == 'u' ]; then
+    sorted='|sort -u'
+fi
+eval $selectFiled $file $sorted $PARTN
+exit 0
